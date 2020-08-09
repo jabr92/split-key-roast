@@ -8,9 +8,9 @@ the application. Anything needed for the app context will be done within the
 from flask import current_app as app
 from flask import Flask, redirect, url_for
 from flask_login import LoginManager, current_user
-from flask_pymongo import PyMongo
+from flask_mongoengine import MongoEngine
 from flask_socketio import SocketIO
-from .models.const import creatives
+from app.models.static.creatives import Creatives
 from .models.user import User
 from .libs.utils import now_date
 from pyhottop.pyhottop import Hottop
@@ -27,7 +27,7 @@ from redis import Redis
 mgr = socketio.RedisManager('redis://' + os.environ.get('REDIS_HOST'))
 sio = SocketIO(client_manager=mgr)
 login_manager = LoginManager()
-mongo = PyMongo()
+mongo = MongoEngine()
 ht = Hottop()
 
 logger = logging.getLogger("cloud_cafe")
@@ -58,30 +58,24 @@ def tweet_hook(func):
         # if app.config['SIMULATE_ROAST']:
         #     return results
 
-        creative_ref = copy.deepcopy(creatives)
         action = func.__name__
-        base = creative_ref.get(func.__name__)
-        creative = None
+        creative = Creatives.get_random(func)
         media = None
         if action == 'on_start_monitor' and bot.get('tweet_roast_begin'):
             state = results['state']
-            creative = base[random.randint(0, len(base) - 1)]
             creative += " %s grams of %s " % (
                 state['input_weight'], state['coffee'])
         if action == 'on_stop_monitor' and bot.get('tweet_roast_complete'):
             state = results['state']
-            creative = base[random.randint(0, len(base) - 1)]
             creative += " Total time: %s " % (state['duration'])
         if (action in ['on_first_crack', 'on_second_crack', 'on_drop']) \
                 and (bot.get('tweet_roast_progress')):
             state = results['state']
             last = state['last']
-            creative = base[random.randint(0, len(base) - 1)]
             creative += " State: ET %d, BT %d, Time %s " % (
                 last['environment_temp'], last['bean_temp'],
                 results['state']['duration'])
         if (action == 'on_shutdown' and bot.get('tweet_roast_complete')):
-            creative = base[random.randint(0, len(base) - 1)]
             creative += " "
             media_path = os.path.dirname(__file__) + "/resources/tmp/"
             media = media_path + now_date(str=True) + "-roast.png"
@@ -90,16 +84,7 @@ def tweet_hook(func):
             # Didn't trigger any of the actions or they weren't enabled
             return results
 
-        tags = 0
-        tag_count = random.randint(2, 8)
-        hashtags = creative_ref.get('hash_tags')
-        while len(creative) <= 250:
-            if tags == tag_count:
-                break
-            hashtag = hashtags[random.randint(0, len(hashtags) - 1)]
-            creative += hashtag + " "
-            hashtags.remove(hashtag)
-            tags += 1
+        creative = Creatives.add_hashtags(creative)
 
         # Tweeting code
         api = twitter.Api(consumer_key=str(bot.get('consumer_key')),
@@ -131,12 +116,7 @@ def load_user(username):
     :type username: str
     :returns: User
     """
-    from flask import current_app as app
-    c = mongo.db[app.config['USERS_COLLECTION']]
-    u = c.find_one({"username": username})
-    if not u:
-        return None
-    return User(u)
+    return User.objects.get(username=username)
 
 
 @login_manager.unauthorized_handler
@@ -148,6 +128,7 @@ def unauthorized():
 def create_app(debug=False, simulate=False):
     """Create an application context with blueprints."""
     app = Flask(__name__, static_folder='./resources')
+    app.logger.setLevel(logging.DEBUG)
     app.config['SECRET_KEY'] = 'iqR2cYJp93PuuO8VbK1Z'
     app.config['MONGO_DBNAME'] = 'cloud_cafe'
     app.config['BREWS_COLLECTION'] = 'brews'
@@ -156,9 +137,13 @@ def create_app(debug=False, simulate=False):
     app.config['PROFILE_COLLECTION'] = 'profiles'
     app.config['USERS_COLLECTION'] = 'accounts'
     app.config['SIMULATE_ROAST'] = simulate
-    app.config['MONGO_URI'] = os.environ.get('MONGO_URI')
     app.config['REDIS_HOST'] = os.environ.get('REDIS_HOST')
     app.redis = Redis(host='redis')
+    app.config['MONGODB_SETTINGS'] = {
+        'db': 'cloud_cafe',
+        'host': os.environ.get('MONGO_HOST'),
+        'port': 27017
+    }
     login_manager.init_app(app)
     mongo.init_app(app)
     sio.init_app(app)

@@ -1,15 +1,22 @@
 from werkzeug.security import check_password_hash
+import mongoengine as me
+
+from .integrations.twitter_integration import TwitterIntegration
 
 
-class User():
+class Integrations(me.EmbeddedDocument):
+    twitter_bot = me.EmbeddedDocumentField(TwitterIntegration)
 
+
+class User(me.Document):
     """User class used in the login process."""
-
-    def __init__(self, user):
-        self.username = user.get('username')
-        self.email = user.get('email')
-        self.first_name = user.get('first_name')
-        self.last_name = user.get('last_name')
+    meta = dict(collection='accounts')
+    username = me.StringField(required=True)
+    password = me.StringField(required=True)
+    email = me.StringField(required=True)
+    first_name = me.StringField(required=True)
+    last_name = me.StringField(required=True)
+    integrations = me.EmbeddedDocumentField(Integrations)
 
     def is_authenticated(self):
         return True
@@ -26,6 +33,5 @@ class User():
     def get_name(self):
         return self.first_name + " " + self.last_name
 
-    @staticmethod
-    def validate_login(password_hash, password):
-        return check_password_hash(password_hash, password)
+    def validate_login(self, input_password):
+        return check_password_hash(self.password, input_password)

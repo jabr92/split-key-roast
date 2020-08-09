@@ -2,7 +2,8 @@
 from . import core
 from .. import mongo, logger
 from ..core.forms import LoginForm, RegisterForm
-from ..models.user import User
+from ..models.user import User, Integrations
+from ..models.integrations.twitter_integration import TwitterIntegration
 from flask import current_app as app
 from flask import render_template, redirect, url_for, request
 from flask_login import login_user, logout_user
@@ -14,15 +15,14 @@ def login():
     """Handle the login process."""
     form = LoginForm(request.form)
     if request.method == 'POST' and form.validate():
-        c = mongo.db[app.config['USERS_COLLECTION']]
-        user = c.find_one({"username": form.username.data})
+        user = User.objects.get(username=form.username.data)
         logger.debug("User: %s" % user)
-        if user and User.validate_login(user['password'], form.password.data):
-            user_obj = User(user)
-            login_user(user_obj, remember=True)
+        if user and user.validate_login(form.password.data):
+            login_user(user, remember=True)
             next = request.args.get('next')
             return redirect(next or url_for('core.root'))
     errors = ','.join([value[0] for value in list(form.errors.values())])
+    logger.error("bad login " + form.username.data)
     return render_template('login.html', message=errors)
 
 
@@ -38,28 +38,15 @@ def register():
     """Render the register page."""
     form = RegisterForm(request.form)
     if request.method == 'POST' and form.validate():
-        c = mongo.db[app.config['USERS_COLLECTION']]
-        user = {
-            "username": form.username.data,
-            "email": form.email.data,
-            "first_name": form.first_name.data,
-            "last_name": form.last_name.data,
-            'password': generate_password_hash(form.password.data),
-            'integrations': {
-                'twitter_bot': {
-                    'status': False,
-                    'tweet_roast_begin': False,
-                    'tweet_roast_progress': False,
-                    'tweet_roast_complete': False,
-                    'consumer_key': '',
-                    'consumer_secret': '',
-                    'access_token_key': '',
-                    'access_token_secret': ''
-                }
-            }
-        }
+        user = User(
+            username=form.username.data,
+            email=form.email.data,
+            first_name=form.first_name.data,
+            last_name=form.last_name.data,
+            password=generate_password_hash(form.password.data)
+        )
         logger.debug("User: %s" % user)
-        _id = c.insert(user)
+        user.save()
         next = request.args.get('next')
         return redirect(next or url_for('core.login'))
     errors = ','.join([value[0] for value in list(form.errors.values())])
