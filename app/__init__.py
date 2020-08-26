@@ -24,7 +24,7 @@ import socketio
 import sys
 from redis import Redis
 
-mgr = socketio.RedisManager('redis://' + os.environ.get('REDIS_HOST'))
+mgr = socketio.RedisManager('redis://localhost') # + os.environ.get('REDIS_HOST'))
 sio = SocketIO(client_manager=mgr)
 login_manager = LoginManager()
 mongo = MongoEngine()
@@ -137,11 +137,11 @@ def create_app(debug=False, simulate=False):
     app.config['PROFILE_COLLECTION'] = 'profiles'
     app.config['USERS_COLLECTION'] = 'accounts'
     app.config['SIMULATE_ROAST'] = simulate
-    app.config['REDIS_HOST'] = os.environ.get('REDIS_HOST')
-    app.redis = Redis(host='redis')
+    app.config['REDIS_HOST'] = 'localhost'
+    app.redis = Redis(host='localhost')
     app.config['MONGODB_SETTINGS'] = {
         'db': 'cloud_cafe',
-        'host': os.environ.get('MONGO_HOST'),
+        'host': 'localhost',
         'port': 27017
     }
     login_manager.init_app(app)
